@@ -879,6 +879,13 @@
       if (A.date > S.today) { toast('ভবিষ্যতের তারিখে হাজিরা দেওয়া যায় না', true); return; }
       if (!myCount()) { toast('আপনি কোনো নতুন টিক দেননি', true); return; }
 
+      var auth = await sb.auth.getUser();
+      if (auth.error || !auth.data || !auth.data.user) {
+        toast('সেশন শেষ হয়েছে, আবার লগইন করুন।', true);
+        return;
+      }
+      S.user = auth.data.user;
+
       var marks = {};
       Object.keys(A.othersMarks).forEach(function (sid) {
         marks[sid] = { by: A.othersMarks[sid].by, name: A.othersMarks[sid].name };
@@ -903,8 +910,13 @@
           present_ids: presentIds, absent_ids: absentIds,
           marks: marks, updated_at: new Date().toISOString()
         };
-        if (!A.existing) row.created_by = S.user.id;
-        var r = await sb.from('sessions').upsert(row, { onConflict: 'batch_id,session_date' }).select().single();
+        var r;
+        if (A.existing) {
+          r = await sb.from('sessions').update(row).eq('id', A.existing.id).select().single();
+        } else {
+          row.created_by = S.user.id;
+          r = await sb.from('sessions').insert(row).select().single();
+        }
         if (r.error) throw r.error;
         upsertCachedSession(r.data);
         A.existing = r.data;
