@@ -232,6 +232,14 @@
     var e = S.user.email || '';
     return e ? e.split('@')[0] : '';
   }
+  function currentUstazaName() {
+    var member = memberById(S.user && S.user.id);
+    return cleanText(member && member.full_name) || userDisplayName();
+  }
+  function displayUstazaName(value) {
+    var name = cleanText(value);
+    return /^(admin|ustaz|উস্তাজা?)$/i.test(name) ? currentUstazaName() : name;
+  }
   function uidToName(uid) {
     if (!uid) return '';
     var m = memberById(uid);
@@ -678,7 +686,7 @@
       var name = cleanText(m.full_name || '');
       if (name && nameOptions.indexOf(name) === -1) nameOptions.push(name);
     });
-    var initialUstaza = A.ustaza || LS.get('att.ustaza') || userDisplayName();
+    var initialUstaza = displayUstazaName(A.ustaza || LS.get('att.ustaza') || currentUstazaName());
     var ustazaInput = canEditUstazaName
       ? h('select', { class:'sel', id:'ustazaName', 'aria-label':'উস্তাজার নাম' })
       : h('input', {
@@ -855,12 +863,10 @@
         resultEl.appendChild(h('div', { class:'empty', text:'এখনো কাউকে উপস্থিত করা হয়নি।' }));
       }
       submitBtn = h('button', { type:'button', class:'btn', disabled: !total || !myN, onclick: submit }, ico('save'), myN ? 'আমার টিক জমা দিন' : 'জমা দেওয়ার কিছু নেই');
-      copyBtn = h('button', { type:'button', class:'btn ghost', disabled: !all.length, onclick: function () {
-        var names = all.map(function (x) { return x.name; });
-        var us = [];
-        all.forEach(function (x) { if (x.by && us.indexOf(x.by) === -1) us.push(x.by); });
-        if (myN) us.push(cleanText(ustazaInput.value));
-        copyText(buildCopyText(A.date, us.filter(Boolean).join(', '), batchName(A.batchId), names));
+      copyBtn = h('button', { type:'button', class:'btn ghost', disabled: !myN, onclick: function () {
+        var myNames = activeStudents().filter(function (s) { return A.myMarks[s.id]; })
+          .map(function (s) { return s.name; });
+        copyText(buildCopyText(A.date, displayUstazaName(ustazaInput.value) || currentUstazaName(), batchName(A.batchId), myNames));
       } }, ico('copy'), 'কপি করুন');
       resultEl.appendChild(h('div', { class:'btn-row' }, submitBtn, copyBtn));
     }
@@ -1164,6 +1170,10 @@
     var absent = (sess.absent_ids||[]).map(function (id) { return S.stuMap[id]; }).filter(Boolean).sort(byRoll);
     var bName = batchName(sess.batch_id);
     var marks = sess.marks && typeof sess.marks === 'object' ? sess.marks : {};
+    var hasDetailedMarks = Object.keys(marks).length > 0;
+    var myPresent = present.filter(function (s) {
+      return hasDetailedMarks ? marks[s.id] && marks[s.id].by === S.user.id : sess.created_by === S.user.id;
+    });
     var canDelete = isAdmin() || sess.created_by === S.user.id;
 
     var node = h('div', {},
@@ -1194,8 +1204,11 @@
     }
 
     node.appendChild(h('div', { class:'btn-row' },
-      h('button', { type:'button', class:'btn', onclick: function () {
-        copyText(buildCopyText(sess.session_date, sess.ustaza_name, bName, present.map(function (s) { return s.name; })));
+      h('button', { type:'button', class:'btn', disabled: !myPresent.length, onclick: function () {
+        var names = myPresent.map(function (s) { return s.name; });
+        var markNames = myPresent.map(function (s) { return marks[s.id] && marks[s.id].name; });
+        var ustaza = names.length ? displayUstazaName(markNames.filter(Boolean)[0]) || currentUstazaName() : '';
+        copyText(buildCopyText(sess.session_date, ustaza, bName, names));
       } }, ico('copy'), 'কপি করুন'),
       h('button', { type:'button', class:'btn ghost', onclick: function () {
         S.att.batchId = sess.batch_id;
