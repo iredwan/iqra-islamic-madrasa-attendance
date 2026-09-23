@@ -94,6 +94,7 @@
     edit:'<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/>',
     trash:'<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
     logout:'<path d="M9 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4"/><path d="M16 8l4 4-4 4M20 12H9"/>',
+    menu:'<path d="M4 7h16M4 12h16M4 17h16"/>',
     phone:'<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>',
     chat:'<path d="M4 5h16v11H9l-5 4z"/>',
     left:'<path d="M15 5l-7 7 7 7"/>',
@@ -1724,22 +1725,38 @@
     admin: viewAdmin
   };
 
+  function closeDrawer() {
+    var backdrop = document.getElementById('siteDrawerBackdrop');
+    var panel = document.getElementById('siteDrawer');
+    var trigger = document.querySelector('.menu-trigger');
+    if (backdrop) backdrop.classList.remove('open');
+    if (panel) panel.classList.remove('open');
+    if (trigger) trigger.setAttribute('aria-expanded', 'false');
+    document.body.classList.remove('noscroll');
+  }
+
+  function toggleDrawer() {
+    var backdrop = document.getElementById('siteDrawerBackdrop');
+    var panel = document.getElementById('siteDrawer');
+    var trigger = document.querySelector('.menu-trigger');
+    if (!backdrop || !panel || !trigger) return;
+    var isOpen = panel.classList.contains('open');
+    panel.classList.toggle('open', !isOpen);
+    backdrop.classList.toggle('open', !isOpen);
+    trigger.setAttribute('aria-expanded', String(!isOpen));
+    document.body.classList.toggle('noscroll', !isOpen);
+  }
+
   function renderShell() {
     var app = $('app');
     app.textContent = '';
     var uname = userDisplayName();
     var subline = S.madrasa.name + ' · ' + (uname || S.user.email) + ' · ' + roleLabel(S.madrasa.role);
     var topActions = [];
-    if (isMainAdmin()) {
-      topActions.push(h('button', {
-        type:'button', class:'icon-btn light', title:'Admin প্যানেল',
-        'aria-label':'Admin প্যানেল', onclick: function () { go('admin'); }
-      }, ico('shield')));
-    }
     topActions.push(h('button', {
-      type:'button', class:'icon-btn light', title:'লগআউট',
-      'aria-label':'লগআউট', onclick: logout
-    }, ico('logout')));
+      type:'button', class:'menu-trigger', title:'মেনু',
+      'aria-label':'মেনু', 'aria-expanded':'false', onclick: toggleDrawer
+    }, ico('menu')));
 
     app.appendChild(h('header', { class:'topbar' },
       h('div', { class:'brand' },
@@ -1748,25 +1765,44 @@
           h('span', { text:'উপস্থিতি খাতা' }),
           h('small', { class:'brand-sub', text: subline }))),
       h('div', { class:'top-actions' }, topActions)));
-    app.appendChild(h('main', { id:'main', class:'wrap' }));
 
-    var inner = h('div', { class:'in' });
+    var backdrop = h('div', { id:'siteDrawerBackdrop', class:'drawer-backdrop', onclick: closeDrawer });
+    var drawer = h('aside', { id:'siteDrawer', class:'site-drawer', role:'navigation', 'aria-label':'সাইট মেনু' },
+      h('div', { class:'drawer-header' },
+        h('strong', { text:'মেনু' }),
+        h('button', { type:'button', class:'drawer-close', text:'✕', 'aria-label':'মেনু বন্ধ', onclick: closeDrawer })));
+
     TABS.forEach(function (t) {
-      inner.appendChild(h('button', {
-        type:'button', class:'tab', 'data-tab': t.id,
+      drawer.appendChild(h('button', {
+        type:'button', class:'drawer-item', 'data-tab': t.id,
         onclick: function () { go(t.id); }
-      }, ico(t.icon), t.label));
+      }, ico(t.icon), h('span', { text: t.label })));
     });
-    app.appendChild(h('nav', { class:'tabbar', 'aria-label':'প্রধান মেনু' }, inner));
+
+    if (isMainAdmin()) {
+      drawer.appendChild(h('button', {
+        type:'button', class:'drawer-item', 'data-tab': 'admin',
+        onclick: function () { go('admin'); }
+      }, ico('shield'), h('span', { text: 'Admin প্যানেল' })));
+    }
+
+    drawer.appendChild(h('button', {
+      type:'button', class:'drawer-item danger',
+      onclick: function () { closeDrawer(); logout(); }
+    }, ico('logout'), h('span', { text: 'লগআউট' })));
+
+    app.appendChild(backdrop);
+    app.appendChild(drawer);
+    app.appendChild(h('main', { id:'main', class:'wrap' }));
   }
 
   function updateNav() {
-    var tabs = document.querySelectorAll('.tab');
-    for (var i = 0; i < tabs.length; i++) {
-      var on = tabs[i].getAttribute('data-tab') === S.view;
-      tabs[i].classList.toggle('on', on);
-      if (on) tabs[i].setAttribute('aria-current','page');
-      else tabs[i].removeAttribute('aria-current');
+    var items = document.querySelectorAll('.drawer-item');
+    for (var i = 0; i < items.length; i++) {
+      var on = items[i].getAttribute('data-tab') === S.view;
+      items[i].classList.toggle('on', on);
+      if (on) items[i].setAttribute('aria-current','page');
+      else items[i].removeAttribute('aria-current');
     }
   }
 
@@ -1776,6 +1812,7 @@
     S.rid++;
     closeSheet();
     closeConfirm();
+    closeDrawer();
     updateNav();
     var main = $('main');
     if (!main) return;
