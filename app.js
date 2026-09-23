@@ -235,7 +235,9 @@
   }
   function currentUstazaName() {
     var member = memberById(S.user && S.user.id);
-    return cleanText(member && member.full_name) || userDisplayName();
+    if (member && cleanText(member.full_name)) return cleanText(member.full_name);
+    var metadata = S.user && S.user.user_metadata ? S.user.user_metadata : {};
+    return cleanText(metadata.full_name || metadata.name || '');
   }
   function displayUstazaName(value) {
     var name = cleanText(value);
@@ -246,6 +248,23 @@
     var m = memberById(uid);
     if (m && m.full_name) return m.full_name;
     return 'উস্তাজা';
+  }
+  function sessionUstazaNames(sess) {
+    var names = {};
+    var marks = sess && sess.marks;
+    if (marks && typeof marks === 'object') {
+      Object.keys(marks).forEach(function (sid) {
+        var name = cleanText(marks[sid] && marks[sid].name);
+        if (name) names[name] = true;
+      });
+    }
+    if (!Object.keys(names).length && sess && sess.ustaza_name) {
+      String(sess.ustaza_name).split(',').forEach(function (name) {
+        name = cleanText(name);
+        if (name) names[name] = true;
+      });
+    }
+    return Object.keys(names).join(', ');
   }
 
   function parseSessionMarks(sess) {
@@ -570,7 +589,7 @@
       S.batches.forEach(function (b, i) { order[b.id] = i; });
       day.slice().sort(function (a, b) { return order[a.batch_id] - order[b.batch_id]; }).forEach(function (s) {
         wrap.appendChild(h('button', { type:'button', class:'cls', onclick: function () { openReportSheet(s); } },
-          h('div', {}, h('b', { text: batchName(s.batch_id) }), h('small', { text: 'উস্তাজা: ' + (s.ustaza_name || '—') })),
+          h('div', {}, h('b', { text: batchName(s.batch_id) }), h('small', { text: 'উস্তাজা: ' + (sessionUstazaNames(s) || '—') })),
           h('div', { class:'cnt' },
             h('span', { class:'g', text: (s.present_ids||[]).length + ' উপস্থিত' }),
             h('span', { class:'r', text: (s.absent_ids||[]).length + ' অনুপস্থিত' }))));
@@ -687,12 +706,12 @@
       var name = cleanText(m.full_name || '');
       if (name && nameOptions.indexOf(name) === -1) nameOptions.push(name);
     });
-    var initialUstaza = displayUstazaName(A.ustaza || LS.get('att.ustaza') || currentUstazaName());
+    var initialUstaza = currentUstazaName();
     var ustazaInput = canEditUstazaName
       ? h('select', { class:'sel', id:'ustazaName', 'aria-label':'উস্তাজার নাম' })
       : h('input', {
         class:'text-input', type:'text', id:'ustazaName', readonly:'',
-        value: userDisplayName()
+        value: currentUstazaName()
       });
     if (canEditUstazaName) {
       nameOptions.forEach(function (name) {
@@ -867,14 +886,14 @@
       copyBtn = h('button', { type:'button', class:'btn ghost', disabled: !myN, onclick: function () {
         var myNames = activeStudents().filter(function (s) { return A.myMarks[s.id]; })
           .map(function (s) { return s.name; });
-        copyText(buildCopyText(A.date, displayUstazaName(ustazaInput.value) || currentUstazaName(), batchName(A.batchId), myNames));
+        copyText(buildCopyText(A.date, currentUstazaName(), batchName(A.batchId), myNames));
       } }, ico('copy'), 'কপি করুন');
       resultEl.appendChild(h('div', { class:'btn-row' }, submitBtn, copyBtn));
     }
 
     async function submit() {
       var students = activeStudents();
-      var ustaza = cleanText(ustazaInput.value);
+      var ustaza = currentUstazaName();
       if (!students.length) { toast('এই ব্যাচে কোনো স্টুডেন্ট নেই', true); return; }
       if (!ustaza) { toast('আগে আপনার নাম লিখুন', true); ustazaInput.focus(); return; }
       if (A.date > S.today) { toast('ভবিষ্যতের তারিখে হাজিরা দেওয়া যায় না', true); return; }
@@ -895,10 +914,6 @@
         if (A.myMarks[sid]) marks[sid] = { by: S.user.id, name: ustaza };
       });
 
-      var nameSet = {};
-      Object.keys(marks).forEach(function (sid) { if (marks[sid].name) nameSet[marks[sid].name] = true; });
-      var combinedName = Object.keys(nameSet).join(', ');
-
       var presentIds = Object.keys(marks);
       var absentIds = [];
       students.forEach(function (s) { if (!marks[s.id]) absentIds.push(s.id); });
@@ -907,7 +922,7 @@
       try {
         var row = {
           batch_id: A.batchId, madrasa_id: S.madrasa.id,
-          session_date: A.date, ustaza_name: combinedName,
+          session_date: A.date, ustaza_name: ustaza,
           present_ids: presentIds, absent_ids: absentIds,
           marks: marks, updated_at: new Date().toISOString()
         };
@@ -967,11 +982,10 @@
       var parsed = parseSessionMarks(existing);
       A.myMarks = parsed.byMe;
       A.othersMarks = parsed.byOthers;
-      var ustaza = (existing && existing.ustaza_name) || LS.get('att.ustaza') || userDisplayName();
+      var ustaza = currentUstazaName();
       if (draft && Array.isArray(draft.myMarks)) {
         A.myMarks = {};
         draft.myMarks.forEach(function (sid) { if (!A.othersMarks[sid]) A.myMarks[sid] = true; });
-        if (draft.ustaza) ustaza = draft.ustaza;
         A.dirty = true;
       } else {
         A.dirty = false;
@@ -1133,8 +1147,8 @@
         }
         var studentPresent = (s.present_ids || []).indexOf(R.studentId) !== -1;
         var rowMeta = R.studentId
-          ? (studentPresent ? 'উপস্থিত' : 'অনুপস্থিত') + ' · উস্তাজা: ' + (s.ustaza_name||'—')
-          : 'উস্তাজা: ' + (s.ustaza_name||'—');
+          ? (studentPresent ? 'উপস্থিত' : 'অনুপস্থিত') + ' · উস্তাজা: ' + (sessionUstazaNames(s)||'—')
+          : 'উস্তাজা: ' + (sessionUstazaNames(s)||'—');
         var rowCounts = R.studentId
           ? h('span', { class: studentPresent ? 'g' : 'r', text: studentPresent ? 'উপস্থিত' : 'অনুপস্থিত' })
           : [h('span', { class:'g', text: (s.present_ids||[]).length + ' উপস্থিত' }), h('span', { class:'r', text: (s.absent_ids||[]).length + ' অনুপস্থিত' })];
@@ -1190,7 +1204,7 @@
     var canDelete = isAdmin() || sess.created_by === S.user.id;
 
     var node = h('div', {},
-      h('p', { class:'sheet-sub', text: fmtDate(sess.session_date) + ' ' + weekdayOf(sess.session_date) + '   উস্তাজা: ' + (sess.ustaza_name||'—') }),
+      h('p', { class:'sheet-sub', text: fmtDate(sess.session_date) + ' ' + weekdayOf(sess.session_date) + '   উস্তাজা: ' + (sessionUstazaNames(sess)||'—') }),
       h('div', { class:'counts' },
         h('span', { class:'badge green', text:'উপস্থিত ' + present.length }),
         h('span', { class:'badge red', text:'অনুপস্থিত ' + absent.length })));
@@ -1750,7 +1764,7 @@
   function renderShell() {
     var app = $('app');
     app.textContent = '';
-    var uname = userDisplayName();
+    var uname = currentUstazaName();
     var subline = S.madrasa.name + ' · ' + (uname || S.user.email) + ' · ' + roleLabel(S.madrasa.role);
     var topActions = [];
     topActions.push(h('button', {
